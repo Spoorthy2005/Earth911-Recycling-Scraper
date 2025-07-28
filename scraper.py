@@ -1,40 +1,54 @@
-import csv
-from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
+import csv
 
-# Setup headless Chrome
-options = Options()
-options.add_argument("--headless")
-driver = webdriver.Chrome(options=options)
+print("Launching browser...")
+driver = webdriver.Chrome()
+driver.get("https://search.earth911.com/")
 
-url = "https://search.earth911.com/?what=Electronics&where=10001&list_filter=all&max_distance=100&country=US&latitude=40.7507428&longitude=-73.99653&region=NY&page=1"
-driver.get(url)
+wait = WebDriverWait(driver, 15)
 
-time.sleep(5)  # wait for JS content to load
+print("Waiting for search inputs to load...")
+search_input = wait.until(EC.presence_of_element_located((By.ID, "what")))
+search_input.clear()
+search_input.send_keys("Electronics")
 
-# Scrape results
-soup = BeautifulSoup(driver.page_source, 'html.parser')
+location_input = driver.find_element(By.ID, "where")
+location_input.clear()
+location_input.send_keys("10001")
 
-facility_cards = soup.select('.MuiPaper-root.MuiCard-root')[:3]
+print("Waiting for search button and clicking it...")
+search_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "search__submit")))
+search_button.click()
+
+print("Waiting for results to load...")
+time.sleep(5)
+
+print("Scraping results...")
+facilities = driver.find_elements(By.CLASS_NAME, "facility__container")
 
 data = []
-for card in facility_cards:
+
+for facility in facilities[:3]:  # Limit to 3 facilities
     try:
-        name = card.select_one('.MuiTypography-h6').text.strip()
-        address = card.select_one('[data-testid="address"]').text.strip()
-        last_updated = card.select_one('[data-testid="updateDate"]').text.strip()
-        materials = ", ".join([tag.text.strip() for tag in card.select('[data-testid="materialTag"]')])
-        
-        data.append([name, last_updated, address, materials])
+        name = facility.find_element(By.CLASS_NAME, "facility__name").text.strip()
+        address = facility.find_element(By.CLASS_NAME, "facility__address").text.strip()
+        updated = facility.find_element(By.CLASS_NAME, "facility__last-update").text.strip()
+        materials = facility.find_element(By.CLASS_NAME, "facility__materials").text.strip()
+
+        print(f"✔ Found: {name}")
+        data.append([name, updated, address, materials])
     except Exception as e:
-        print(f"Error: {e}")
+        print("⚠ Error reading a facility:", e)
 
-driver.quit()
-
-# Save to CSV
-with open('facilities.csv', 'w', newline='', encoding='utf-8') as f:
+print("Saving to CSV...")
+with open("facilities.csv", "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["business_name", "last_update_date", "street_address", "materials_accepted"])
     writer.writerows(data)
+
+print("✅ Scraping complete. Data saved to 'facilities.csv'.")
+driver.quit()
